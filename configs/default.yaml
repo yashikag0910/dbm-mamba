@@ -1,0 +1,57 @@
+# DBM-Mamba Default Configuration
+
+# Operational Mode
+dev_mode: false              # If true, uses subsampled datasets and fewer training steps
+
+# Data Configuration
+data:
+  seq_len: 16               # Sequence length (k) of packet flow tokens (choices: 8, 16, 32, 64)
+  mask_ratio: 0.15          # Probability of masking packet tokens for pretraining
+  batch_size_dev: 64        # Batch size for development mode
+  batch_size_full: 256      # Batch size for full execution mode
+  dataset_paths:
+    ciciot2023: "data/ciciot23"
+    ton_iot: "data/ton_iot"
+    iot_23: "data/iot_23"
+  train_split: 0.8
+  seed: 42
+
+# Model Architecture (Mamba Encoder)
+model:
+  d_model: 64               # Dimension of input features after projection
+  d_state: 16               # SSM state dimension (N)
+  d_conv: 4                 # Local convolution width
+  expand: 2                 # Expansion factor
+  n_classes: 34             # Number of attack classes in CICIoT2023 (+1 for benign)
+
+# Fine-tuning Hyperparameters
+finetune:
+  epochs_dev: 2
+  epochs_full: 3
+  lr: 0.001
+  focal_alpha: 0.25
+  focal_gamma: 2.0
+  lambda_umap_init: 0.1     # Initial weight of Parametric UMAP loss
+  lambda_umap_final: 0.01   # Final weight after annealing
+  umap_k: 15                # Number of neighbors for minibatch k-NN
+
+# Stage 3: Behavioral Memory Bank
+memory:
+  k_candidates: [2, 4, 8]   # K-Means K to evaluate via elbow method
+  buffer_size: 10000        # Sliding percentile tracker buffer size
+  recompute_interval: 1000  # Recompute threshold after these many benign samples
+  benign_percentile: 0.99   # percentile for device bank threshold (tau_d = P99)
+  generic_percentile: 0.95  # percentile for generic bank (tau_generic = P95)
+  ema_beta: 0.01            # EMA prototype update rate
+  triplet_margin: 0.5       # Target margin for triplet refinement (or adaptive fallback)
+
+# Adaptive Inference Gating
+gating:
+  entropy_threshold: 1.2    # Entropy threshold below which fast-path can be active
+  var_iat_threshold: 0.5    # Variance threshold below which fast-path can be active
+  mamba_confidence_th: 0.95 # Confidence above which low-complexity decision can be accepted
+  anomaly_confidence_th: 0.5 # Proportion of threshold tau_d below which sample is safe
+
+# Quantization Configuration
+quantization:
+  mode: "hybrid"            # options: "full", "int8", "hybrid", "log"

@@ -1,0 +1,14 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+.venv/
+venv/
+
+# Project Dataset files (Ignore large dataset files)
+data/
+
+# OS files
+.DS_Store

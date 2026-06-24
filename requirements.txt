@@ -1,0 +1,16 @@
+# Core Dependencies
+torch>=2.2.0
+numpy>=1.24.0
+pandas>=2.0.0
+pyyaml>=6.0.0
+scikit-learn>=1.3.0
+shap>=0.44.0
+matplotlib>=3.8.0
+
+# optional or platform-specific
+faiss-cpu>=1.7.4
+
+# Note on Mamba-SSM:
+# For hardware with CUDA, install mamba-ssm via:
+# pip install mamba-ssm causal-conv1d
+# For CPU/MPS, the project uses a built-in PyTorch selective scan fallback.
