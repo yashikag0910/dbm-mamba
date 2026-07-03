@@ -43,7 +43,7 @@ DBM-Mamba is a three-stage IoT gateway intrusion detection architecture implemen
 ## How to Run
 
 ### Development Mode (`dev_mode: true`)
-By default, `configs/default.yaml` has `dev_mode: true`. This runs the scripts with a generated synthetic dataset to quickly verify shapes, components, and pipelines in less than 2 minutes.
+By default, `configs/default.yaml` has `dev_mode: true`. This runs the scripts with  a generated synthetic dataset to quickly verify shapes, components, and pipelines in less than 2 minutes.
 
 To run the pipeline in dev mode:
 ```bash
@@ -62,3 +62,6 @@ python scripts/run_demo_pipeline.py
    ```
 
 Note: `run_eval_full_suite.py` enforces that final paper-ready metrics are ONLY written to `results/final` when `dev_mode` is disabled. When `dev_mode` is enabled, all outputs are diverted to `results/dev`.
+
+
+
