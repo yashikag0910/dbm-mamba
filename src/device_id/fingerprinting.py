@@ -5,6 +5,13 @@ class IdentityProfiler:
     """
     Identifies device class using MAC OUI, JA3/JA4 TLS hash, and DHCP option list.
     Applies majority voting and falls back to Generic IoT on ambiguity.
+
+    NOTE: In the current evaluation pipeline (CICIoT2023, ToN_IoT, IoT-23
+    as pre-extracted flow-level CSVs), only MAC OUI lookup is exercised
+    against real data -- these datasets do not retain raw TLS ClientHello
+    or DHCP option fields. JA3/JA4 and DHCP fingerprinting remain fully
+    implemented and architecturally integrated for deployments with access
+    to raw packet captures, but are not exercised in this evaluation.
     """
     def __init__(self):
         # Database mappings
@@ -16,7 +23,7 @@ class IdentityProfiler:
             "3c:d9:2b": "SmartSpeaker",
             "e0:76:d0": "SmartLight"
         }
-        
+
         # JA3/JA4 fingerprint mappings
         # (MD5 of TLS client hello: e.g. SSLVersion,CipherSuites,Extensions,ECCurves,ECCurveFormats)
         self.ja3_db = {
@@ -26,7 +33,7 @@ class IdentityProfiler:
             hashlib.md5(b"771,52392-52393,0-23-65281,23-24,0").hexdigest(): "SmartSpeaker",
             hashlib.md5(b"769,47-53,10-11,23,0").hexdigest(): "SmartLight"
         }
-        
+
         # DHCP Option Fingerprints (ordered string of DHCP options)
         self.dhcp_db = {
             "1,3,6,15,28,42": "Camera",
@@ -73,48 +80,61 @@ class IdentityProfiler:
         cleaned = ",".join([o.strip() for o in option_list_str.split(",") if o.strip()])
         return self.dhcp_db.get(cleaned, None)
 
-    def profile_device(self, mac: str = None, tls_hello_str: str = None, 
+    def profile_device(self, mac: str = None, tls_hello_str: str = None,
                        dhcp_options: str = None) -> tuple[int, bool]:
         """
         Profiles device based on available signals using majority voting.
-        
+
+        Per the proposal's multi-signal device identification design
+        (Section 4.7): DeviceClass = Majority(M, J, D) only if at least
+        two of the available signals agree on the same class. A single
+        matching signal -- with the other two unavailable or disagreeing --
+        is NOT sufficient confidence and must fall back to Generic IoT.
+
         Returns:
             device_class_id: int index of the identified device class
             is_ambiguous: bool indicating if a majority could not be reached (fallback to Generic)
         """
         votes = []
-        
+
         # 1. MAC Lookup
         mac_class = self.lookup_mac(mac)
         if mac_class:
             votes.append(mac_class)
-            
+
         # 2. TLS Lookup
         tls_class = self.lookup_ja3(tls_hello_str)
         if tls_class:
             votes.append(tls_class)
-            
+
         # 3. DHCP Lookup
         dhcp_class = self.lookup_dhcp(dhcp_options)
         if dhcp_class:
             votes.append(dhcp_class)
-            
+
         if not votes:
             # Ambiguous: Fallback to Generic IoT
             return self.class_name_to_id["Generic"], True
-            
+
         # Perform majority vote
         counts = {}
         for vote in votes:
             counts[vote] = counts.get(vote, 0) + 1
-            
+
         # Find maximum vote count
         max_count = max(counts.values())
         candidates = [k for k, v in counts.items() if v == max_count]
-        
-        # If there is a tie or no clear candidate with > 50% voting confidence
-        if len(candidates) > 1 or max_count < 2 and len(votes) >= 3:
+
+        # Require at least two signals to agree on the same class.
+        # A tie between candidates, OR a winning class supported by only
+        # a single signal, is not a confident majority -- fall back to
+        # Generic IoT. (Fixed: previous version used
+        # `max_count < 2 and len(votes) >= 3`, which due to operator
+        # precedence let a single-signal match through as "confident"
+        # whenever fewer than 3 signals were available -- the common case
+        # for these datasets.)
+        if len(candidates) > 1 or max_count < 2:
             return self.class_name_to_id["Generic"], True
-            
+
         winner = candidates[0]
         return self.class_name_to_id[winner], False
