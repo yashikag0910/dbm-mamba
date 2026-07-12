@@ -8,7 +8,10 @@ __pycache__/
 venv/
 
 # Project Dataset files (Ignore large dataset files)
-data/
+# Anchored to the repo root so this does NOT also ignore the src/data/ package
+# (unanchored "data/" matched src/data/, leaving loaders.py / preprocessing.py
+# untracked and missing on a fresh clone).
+/data/
 
 # OS files
 .DS_Store

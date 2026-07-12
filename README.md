@@ -63,5 +63,23 @@ python scripts/run_demo_pipeline.py
 
 Note: `run_eval_full_suite.py` enforces that final paper-ready metrics are ONLY written to `results/final` when `dev_mode` is disabled. When `dev_mode` is enabled, all outputs are diverted to `results/dev`.
 
+<<<<<<< HEAD
 
 
+=======
+### Device identity (important)
+
+The per-device behavioral memory banks require a **real per-flow device identity**. This is derived from the flow's source IP:
+
+- **IoT-23** (`--dataset iot_23`) and **ToN_IoT** (`--dataset ton_iot`) retain source IPs, so each device (IP) gets its own memory bank and is scored against its own benign manifold. These are the datasets for device-aware evaluation. ToN_IoT's shared-testbed IPs give the best benign+attack-per-device coverage.
+- **CICIoT2023** flow CSVs contain only aggregated statistics (no IP/MAC), so every flow maps to a single global device (class 0). On CICIoT2023 the framework reduces to a single global behavioral bank; use it for the classifier / imbalance experiments, not device-aware anomaly claims.
+
+Each stage takes a `--dataset {ciciot2023,ton_iot,iot_23}` flag and writes/reads suffixed checkpoints (e.g. `finetune_encoder_iot_23.pt`). Run a full device-aware pipeline with:
+```bash
+python scripts/run_pretrain.py       --dataset iot_23
+python scripts/run_finetune.py       --dataset iot_23
+python scripts/run_memory_bank.py    --dataset iot_23
+python scripts/run_eval_full_suite.py --dataset iot_23
+```
+At inference the runtime pipeline routes a flow to its device bank via a trusted network-identity binding (`process_flow(..., device_class_id=...)`); multi-signal fingerprinting (MAC/JA3/DHCP) is the fallback when no trusted identity is supplied.
+>>>>>>> 2511c70 (fixed errors)

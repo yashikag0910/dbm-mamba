@@ -12,6 +12,13 @@ class IdentityProfiler:
     or DHCP option fields. JA3/JA4 and DHCP fingerprinting remain fully
     implemented and architecturally integrated for deployments with access
     to raw packet captures, but are not exercised in this evaluation.
+
+    NOTE: In the current evaluation pipeline (CICIoT2023, ToN_IoT, IoT-23
+    as pre-extracted flow-level CSVs), only MAC OUI lookup is exercised
+    against real data -- these datasets do not retain raw TLS ClientHello
+    or DHCP option fields. JA3/JA4 and DHCP fingerprinting remain fully
+    implemented and architecturally integrated for deployments with access
+    to raw packet captures, but are not exercised in this evaluation.
     """
     def __init__(self):
         # Database mappings
@@ -84,13 +91,7 @@ class IdentityProfiler:
                        dhcp_options: str = None) -> tuple[int, bool]:
         """
         Profiles device based on available signals using majority voting.
-
-        Per the proposal's multi-signal device identification design
-        (Section 4.7): DeviceClass = Majority(M, J, D) only if at least
-        two of the available signals agree on the same class. A single
-        matching signal -- with the other two unavailable or disagreeing --
-        is NOT sufficient confidence and must fall back to Generic IoT.
-
+        
         Returns:
             device_class_id: int index of the identified device class
             is_ambiguous: bool indicating if a majority could not be reached (fallback to Generic)
@@ -124,17 +125,24 @@ class IdentityProfiler:
         # Find maximum vote count
         max_count = max(counts.values())
         candidates = [k for k, v in counts.items() if v == max_count]
-
-        # Require at least two signals to agree on the same class.
-        # A tie between candidates, OR a winning class supported by only
-        # a single signal, is not a confident majority -- fall back to
-        # Generic IoT. (Fixed: previous version used
-        # `max_count < 2 and len(votes) >= 3`, which due to operator
-        # precedence let a single-signal match through as "confident"
-        # whenever fewer than 3 signals were available -- the common case
-        # for these datasets.)
-        if len(candidates) > 1 or max_count < 2:
+        
+        # If there is a tie or no clear candidate with > 50% voting confidence
+        if len(candidates) > 1 or max_count < 2 and len(votes) >= 3:
             return self.class_name_to_id["Generic"], True
 
         winner = candidates[0]
+
+        # Unique winner -> route to that device's bank. This covers both a
+        # confident multi-signal majority (max_count >= 2) and a lone available
+        # signal (max_count == 1, only one signal present). We return
+        # is_ambiguous=False in both cases so that the pipeline uses this
+        # device's memory bank AND its matching device-specific threshold.
+        #
+        # NOTE: is_ambiguous must stay coupled to Generic routing. The pipeline
+        # selects the bank from device_class_id but the threshold from
+        # is_ambiguous; returning is_ambiguous=True here would score a flow
+        # against the device bank while comparing it to the *generic* threshold
+        # (different score scales), which silently corrupts detection. So
+        # is_ambiguous=True is emitted only alongside device_class_id=Generic
+        # (the no-signal and tie cases above).
         return self.class_name_to_id[winner], False

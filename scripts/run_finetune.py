@@ -47,7 +47,12 @@ def train_fast_classifier(model, dataloader, normalizer, lr, epochs, device):
 
 
 def main():
-    print("=== DBM-Mamba Stage 2: Joint Classification & Parametric UMAP Finetuning ===")
+    import argparse
+    parser = argparse.ArgumentParser(description="DBM-Mamba Stage 2 Finetuning")
+    parser.add_argument("--dataset", type=str, default="ciciot2023", choices=["ciciot2023", "ton_iot", "iot_23"], help="Dataset to use")
+    args = parser.parse_args()
+
+    print(f"=== DBM-Mamba Stage 2: Joint Classification & Parametric UMAP Finetuning ({args.dataset.upper()}) ===")
     
     # Load configuration
     config_path = "configs/default.yaml"
@@ -73,8 +78,8 @@ def main():
     epochs = config["finetune"]["epochs_dev"] if dev_mode else config["finetune"]["epochs_full"]
     
     # Load dataset
-    dataset_path = config["data"]["dataset_paths"]["ciciot2023"]
-    dataset = load_iot_dataset(dataset_path, seq_len=seq_len, dev_mode=dev_mode, dataset_type="ciciot2023")
+    dataset_path = config["data"]["dataset_paths"][args.dataset]
+    dataset = load_iot_dataset(dataset_path, seq_len=seq_len, dev_mode=dev_mode, dataset_type=args.dataset)
     
     # Split training / validation
     train_size = int(config["data"]["train_split"] * len(dataset))
@@ -84,27 +89,40 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     
     # Load normalizer state
+    suffix = f"_{args.dataset}" if args.dataset != "ciciot2023" else ""
     normalizer = ZScoreNormalizer(num_features=4)
-    if os.path.exists("checkpoints/normalizer.pt"):
-        normalizer.load_state_dict(torch.load("checkpoints/normalizer.pt", weights_only=False))
-        print("Loaded Z-Score Normalizer state.")
+    norm_path = f"checkpoints/normalizer{suffix}.pt"
+    if os.path.exists(norm_path):
+        normalizer.load_state_dict(torch.load(norm_path, weights_only=False))
+        print(f"Loaded Z-Score Normalizer state from {norm_path}.")
     else:
-        print("[WARNING] Normalizer checkpoint not found. Creating fit from training loader.")
-        # fallback fit
-        all_raw = []
-        for x_b, _, _, _ in train_loader:
-            all_raw.append(x_b)
-            if len(all_raw) * batch_size > 5000:
-                break
-        normalizer.fit(log_compact(torch.cat(all_raw, dim=0)))
+        # Check standard fallback path
+        if os.path.exists("checkpoints/normalizer.pt"):
+            normalizer.load_state_dict(torch.load("checkpoints/normalizer.pt", weights_only=False))
+            print("Loaded Z-Score Normalizer state from checkpoints/normalizer.pt.")
+        else:
+            print("[WARNING] Normalizer checkpoint not found. Creating fit from training loader.")
+            # fallback fit
+            all_raw = []
+            for x_b, _, _, _ in train_loader:
+                all_raw.append(x_b)
+                if len(all_raw) * batch_size > 5000:
+                    break
+            normalizer.fit(log_compact(torch.cat(all_raw, dim=0)))
         
     # Initialize Models
     d_model = config["model"]["d_model"]
     d_state = config["model"]["d_state"]
     d_conv = config["model"]["d_conv"]
     expand = config["model"]["expand"]
-    n_classes = config["model"]["n_classes"]
     
+    if args.dataset == "ciciot2023":
+        n_classes = 34
+    elif args.dataset == "ton_iot":
+        n_classes = 10
+    else: # iot_23
+        n_classes = 12
+        
     encoder = MambaEncoder(
         num_features=4,
         d_model=d_model,
@@ -114,9 +132,13 @@ def main():
     )
     
     # Load Stage 1 weights
-    if os.path.exists("checkpoints/pretrain_encoder.pt"):
+    pretrain_path = f"checkpoints/pretrain_encoder{suffix}.pt"
+    if os.path.exists(pretrain_path):
+        encoder.load_state_dict(torch.load(pretrain_path, weights_only=False))
+        print(f"Loaded pretrained Mamba encoder weights from {pretrain_path}.")
+    elif os.path.exists("checkpoints/pretrain_encoder.pt"):
         encoder.load_state_dict(torch.load("checkpoints/pretrain_encoder.pt", weights_only=False))
-        print("Loaded pretrained Mamba encoder weights.")
+        print("Loaded pretrained Mamba encoder weights from checkpoints/pretrain_encoder.pt.")
     else:
         print("[WARNING] Pretrained encoder checkpoint not found. Initializing randomly.")
         
@@ -161,12 +183,12 @@ def main():
     
     # Save finetuning states
     os.makedirs("checkpoints", exist_ok=True)
-    torch.save(encoder.state_dict(), "checkpoints/finetune_encoder.pt")
-    torch.save(classifier.state_dict(), "checkpoints/finetune_classifier.pt")
-    torch.save(fast_classifier.state_dict(), "checkpoints/fast_classifier.pt")
-    print("Saved fine-tuned encoder to checkpoints/finetune_encoder.pt")
-    print("Saved fine-tuned classifier head to checkpoints/finetune_classifier.pt")
-    print("Saved fast path classifier to checkpoints/fast_classifier.pt")
+    torch.save(encoder.state_dict(), f"checkpoints/finetune_encoder{suffix}.pt")
+    torch.save(classifier.state_dict(), f"checkpoints/finetune_classifier{suffix}.pt")
+    torch.save(fast_classifier.state_dict(), f"checkpoints/fast_classifier{suffix}.pt")
+    print(f"Saved fine-tuned encoder to checkpoints/finetune_encoder{suffix}.pt")
+    print(f"Saved fine-tuned classifier head to checkpoints/finetune_classifier{suffix}.pt")
+    print(f"Saved fast path classifier to checkpoints/fast_classifier{suffix}.pt")
 
 if __name__ == "__main__":
     main()

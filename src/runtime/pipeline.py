@@ -69,22 +69,36 @@ class DBMambaRuntimePipeline:
             device=self.device
         )
 
-    def process_flow(self, seq_x: torch.Tensor, mac: str = None, 
-                     tls_hello: str = None, dhcp_options: str = None) -> dict:
+    def process_flow(self, seq_x: torch.Tensor, mac: str = None,
+                     tls_hello: str = None, dhcp_options: str = None,
+                     device_class_id: int = None) -> dict:
         """
         Processes a single flow sequence and outputs decision metadata.
         Args:
             seq_x: tensor of shape (1, L, 4) or (L, 4)
+            device_class_id: optional trusted device identity for this flow. When
+                a gateway already knows a flow's device from a stable network
+                binding (source IP / DHCP-lease MAC), pass it here to route
+                directly to that device's memory bank. This is how the datasets
+                with real per-flow device identity (IoT-23 / ToN_IoT source IP)
+                are evaluated. When None, fall back to multi-signal fingerprinting.
         """
         if len(seq_x.shape) == 2:
             seq_x = seq_x.unsqueeze(0)
-            
+
         B, L, num_feats = seq_x.shape
         seq_x = seq_x.to(self.device)
-        
+
         # 1. Device Identification
-        device_class_id, is_ambiguous = self.profiler.profile_device(mac, tls_hello, dhcp_options)
-        device_name = self.class_names.get(device_class_id, "Generic")
+        if device_class_id is not None:
+            # Trusted network-identity binding: route to this device's bank.
+            # is_ambiguous stays coupled to Generic (class 0) routing so the
+            # bank and its threshold always come from the same device.
+            device_class_id = int(device_class_id)
+            is_ambiguous = (device_class_id == 0)
+        else:
+            device_class_id, is_ambiguous = self.profiler.profile_device(mac, tls_hello, dhcp_options)
+        device_name = self.class_names.get(device_class_id, f"Device-{device_class_id}")
         
         # 2. Evaluate Adaptive Gating
         P_high, escalated = self.gate(seq_x)
@@ -149,13 +163,23 @@ class DBMambaRuntimePipeline:
                 predicted_class_id = int(pred_id[0].item())
                 confidence = float(conf[0].item())
                 
-                # Anomaly Score via Memory Bank
-                bank = self.mem_banks.get(device_class_id, self.mem_banks[0]) # Fallback to generic if not found
+                # Anomaly Score via Memory Bank.
+                # Resolve routing so the bank and the threshold always come from
+                # the same device: if this device has no fitted bank (unseen /
+                # too few benign samples at training time), fall back to the
+                # Generic bank (class 0) AND the generic threshold together.
+                if device_class_id in self.mem_banks:
+                    bank = self.mem_banks[device_class_id]
+                    route_id, route_ambiguous = device_class_id, is_ambiguous
+                else:
+                    bank = self.mem_banks[0]
+                    route_id, route_ambiguous = 0, True
+
                 score_tensor = bank.compute_anomaly_score(z)
                 anomaly_score = float(score_tensor[0].item())
-                
+
                 # Thresholding
-                is_anomaly = self.threshold_manager.verify_anomaly(device_class_id, anomaly_score, is_ambiguous)
+                is_anomaly = self.threshold_manager.verify_anomaly(route_id, anomaly_score, route_ambiguous)
                 
         # 5. SHAP attribution on anomaly detection
         shap_vals = None

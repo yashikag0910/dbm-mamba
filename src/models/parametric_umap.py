@@ -71,16 +71,28 @@ class ParametricUMAPLoss(nn.Module):
             under = val < target_val
             high[under] = high[under] * 2.0
             
-        # Binary search
+        # Binary search.
+        # val(sigma) = sum_j exp(-(d_ij - rho_i) / sigma) is monotonically
+        # INCREASING in sigma (as sigma grows the exponent -> 0 and each
+        # membership -> 1). Therefore:
+        #   - if the current membership sum is too large, sigma is too big
+        #     -> pull the UPPER bound down to sigma;
+        #   - if it is too small, sigma is too small -> pull the LOWER bound
+        #     up to sigma.
+        # (The previous version had these two assignments swapped, which drove
+        # sigma to the upper bound (~100) for every row, making v_ij ~= 1 for
+        # all neighbors and collapsing the fuzzy graph to a fully-connected one
+        # -- i.e. the topological structure the UMAP loss is meant to preserve
+        # was destroyed.)
         for _ in range(num_iters):
             sigmas = (low + high) / 2.0
             diffs = knn_dists - rho.unsqueeze(-1)
             val = torch.sum(torch.exp(-diffs / (sigmas.unsqueeze(-1) + 1e-8)), dim=1)
-            
+
             over = val > target_val
-            low[over] = sigmas[over]
-            high[~over] = sigmas[~over]
-            
+            high[over] = sigmas[over]
+            low[~over] = sigmas[~over]
+
         return (low + high) / 2.0
 
     def compute_fuzzy_membership(self, X: torch.Tensor) -> torch.Tensor:

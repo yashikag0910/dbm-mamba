@@ -9,7 +9,12 @@ from src.models.mamba_encoder import MambaEncoder
 from src.models.pretrain import PretrainModel, train_pretrain_epoch
 
 def main():
-    print("=== DBM-Mamba Stage 1: Masked Packet Pretraining ===")
+    import argparse
+    parser = argparse.ArgumentParser(description="DBM-Mamba Stage 1 Pretraining")
+    parser.add_argument("--dataset", type=str, default="ciciot2023", choices=["ciciot2023", "ton_iot", "iot_23"], help="Dataset to use")
+    args = parser.parse_args()
+
+    print(f"=== DBM-Mamba Stage 1: Masked Packet Pretraining ({args.dataset.upper()}) ===")
     
     # Load configuration
     config_path = "configs/default.yaml"
@@ -36,8 +41,8 @@ def main():
     epochs = config["finetune"]["epochs_dev"] if dev_mode else config["finetune"]["epochs_full"]
     
     # Load dataset
-    dataset_path = config["data"]["dataset_paths"]["ciciot2023"]
-    dataset = load_iot_dataset(dataset_path, seq_len=seq_len, dev_mode=dev_mode, dataset_type="ciciot2023")
+    dataset_path = config["data"]["dataset_paths"][args.dataset]
+    dataset = load_iot_dataset(dataset_path, seq_len=seq_len, dev_mode=dev_mode, dataset_type=args.dataset)
     
     # Split training / validation
     train_size = int(config["data"]["train_split"] * len(dataset))
@@ -94,10 +99,11 @@ def main():
     os.makedirs("checkpoints", exist_ok=True)
     
     # Save encoder and normalizer states
-    torch.save(encoder.state_dict(), "checkpoints/pretrain_encoder.pt")
-    torch.save(normalizer.state_dict(), "checkpoints/normalizer.pt")
-    print("Saved pretrained encoder to checkpoints/pretrain_encoder.pt")
-    print("Saved normalizer state to checkpoints/normalizer.pt")
+    suffix = f"_{args.dataset}" if args.dataset != "ciciot2023" else ""
+    torch.save(encoder.state_dict(), f"checkpoints/pretrain_encoder{suffix}.pt")
+    torch.save(normalizer.state_dict(), f"checkpoints/normalizer{suffix}.pt")
+    print(f"Saved pretrained encoder to checkpoints/pretrain_encoder{suffix}.pt")
+    print(f"Saved normalizer state to checkpoints/normalizer{suffix}.pt")
 
 if __name__ == "__main__":
     main()
